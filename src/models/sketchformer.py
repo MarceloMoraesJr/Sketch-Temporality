@@ -15,7 +15,7 @@ class BlockConfig():
     nhead: int = 8
     dim_feedforward: int = 512
     dropout: int = 0.1
-    activation: Union[str, Callable[[Tensor], Tensor]]= F.relu
+    activation: Union[str, Callable[[Tensor], Tensor]]= F.gelu
 
 
 class DecoderWrapper(nn.Module):

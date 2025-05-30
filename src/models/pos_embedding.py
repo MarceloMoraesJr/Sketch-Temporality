@@ -7,8 +7,8 @@ from dataclasses import dataclass
 class PosEmbeddingConfig():
     pen_state: bool = True
     stroke_embedding: bool = False
-    sketch_pos_pe: bool = True
-    stroke_pos_pe: bool = False
+    sketch_pos: bool = True
+    stroke_pos: bool = False
     max_strokes: int = 1000 
     max_len_sin_pe: int = 5000 
 
@@ -36,10 +36,10 @@ class SinusoidalPosEmbedding(nn.Module):
 
     
 class PosEmbedding(nn.Module):
-    def __init__(self, hidden_dim, pen_state=True, stroke_embedding=False, sketch_pos_pe=True, stroke_pos_pe=False, max_strokes=1000, max_len_sin_pe=5000):
+    def __init__(self, hidden_dim, pen_state=True, stroke_embedding=False, sketch_pos=True, stroke_pos=False, max_strokes=1000, max_len_sin_pe=5000):
         super(PosEmbedding, self).__init__()
 
-        assert not sketch_pos_pe or not stroke_pos_pe
+        assert not sketch_pos or not stroke_pos
 
         if pen_state:
             self.pen_state_proj = nn.Linear(3, hidden_dim)
@@ -47,9 +47,9 @@ class PosEmbedding(nn.Module):
         if stroke_embedding:
             self.stroke_embedding = nn.Embedding(max_strokes, hidden_dim)
 
-        if sketch_pos_pe or stroke_pos_pe:
+        if sketch_pos or stroke_pos:
             self.pos_pe = SinusoidalPosEmbedding(hidden_dim, max_len_sin_pe)
-        self.stroke_pos_pe = stroke_pos_pe
+        self.stroke_pos = stroke_pos
 
 
     def forward(self, x, pos_info):
@@ -60,6 +60,6 @@ class PosEmbedding(nn.Module):
             x = x + self.stroke_embedding(pos_info['stroke_id'])
              
         if hasattr(self, "pos_pe"):
-            x = x + self.pos_pe(x, pos_info['stroke_pos'] if self.stroke_pos_pe else None)
+            x = x + self.pos_pe(x, pos_info['stroke_pos'] if self.stroke_pos else None)
 
         return x
