@@ -1,0 +1,5 @@
+backup.zip
+checkpoints
+/data/
+results
+__pycache__/
