@@ -11,9 +11,9 @@ class LtQuickDraw(pl.LightningDataModule):
         self.loader_args = loader_args
 
     def setup(self, stage=None):
-        self.train_dataset = QuickDrawDataset("./data/quickdraw/", split='train', relative_coords=self.dataset_args['relative_coords'])
-        self.val_dataset = QuickDrawDataset("./data/quickdraw/", split='valid', relative_coords=self.dataset_args['relative_coords'])
-        self.test_dataset = QuickDrawDataset("./data/quickdraw/", split='test', relative_coords=self.dataset_args['relative_coords'])
+        self.train_dataset = QuickDrawDataset(self.dataset_path, split='train', relative_coords=self.dataset_args['relative_coords'])
+        self.val_dataset = QuickDrawDataset(self.dataset_path, split='valid', relative_coords=self.dataset_args['relative_coords'])
+        self.test_dataset = QuickDrawDataset(self.dataset_path, split='test', relative_coords=self.dataset_args['relative_coords'])
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(self.train_dataset, batch_size=self.loader_args['batch_size'], collate_fn=QuickDrawDataset.collate_fn_padd,

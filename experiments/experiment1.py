@@ -36,8 +36,8 @@ parser.add_argument("--stroke_pos", action=argparse.BooleanOptionalAction, defau
 
 #general arguments
 parser.add_argument("--verbose", action=argparse.BooleanOptionalAction, default=True)
-parser.add_argument("--ckpt_path", type=str, default=None)
-parser.add_argument("--results_path", type=str, default=None)
+parser.add_argument("--ckpt_path", type=str)
+parser.add_argument("--results_path", type=str)
 
 args = parser.parse_args()
 
@@ -62,7 +62,7 @@ sketchformer = SketchformerClassifier(
 
 input_handler = InputHandler()
 model = LtSketchClassification(sketchformer, input_handler)
-datamodule = LtQuickDraw(dataset_path="./data/quickdraw/",
+datamodule = LtQuickDraw(dataset_path="../sketch_representations/data/quickdraw/",
                         dataset_args={"relative_coords": args.relative_coords},
                         loader_args={"seed": args.seed,
                                     "num_workers": args.num_workers,
@@ -81,16 +81,16 @@ checkpoint_callback = ModelCheckpoint(
 
 early_stop_callback = EarlyStopping(
     monitor="val_loss",
-    patience=args.patience,
+    patience=15,
     mode="min"
 )
 
 trainer = Trainer(
-    max_epochs=args.max_epochs,
+    max_steps=150000,
     callbacks=[checkpoint_callback, early_stop_callback],
     default_root_dir=args.ckpt_path,
     log_every_n_steps=50,
-    val_check_interval=0.25,
+    val_check_interval=1500,
     deterministic=args.verbose,
     accelerator="gpu",
     devices=[args.device]
