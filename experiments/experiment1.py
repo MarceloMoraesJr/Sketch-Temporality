@@ -18,10 +18,12 @@ parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--device", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--lr", type=float, default=1e-3)
-parser.add_argument("--max_epochs", type=int, default=30)
-parser.add_argument("--patience", type=int, default=6)
 parser.add_argument("--hidden_dropout", type=float, default=0.1)
 parser.add_argument("--num_workers", type=int, default=8)
+parser.add_argument("--max_steps", type=int, default=150000)
+parser.add_argument("--val_check_interval", type=int, default=1500)
+parser.add_argument("--patience", type=int, default=15)
+parser.add_argument("--log_every_n_steps", type=int, default=1500)
 
 #architecture arguments
 parser.add_argument("--num_layers", type=int, default=4)
@@ -35,7 +37,6 @@ parser.add_argument("--sketch_pos", action=argparse.BooleanOptionalAction, defau
 parser.add_argument("--stroke_pos", action=argparse.BooleanOptionalAction, default=False)
 
 #general arguments
-parser.add_argument("--verbose", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--ckpt_path", type=str)
 parser.add_argument("--results_path", type=str)
 
@@ -75,32 +76,32 @@ checkpoint_callback = ModelCheckpoint(
     dirpath=args.ckpt_path,
     mode="min",
     save_top_k=1,
-    filename="best",
-    verbose=args.verbose
+    filename="best"
 )
 
 early_stop_callback = EarlyStopping(
     monitor="val_loss",
-    patience=15,
+    patience=args.patience,
     mode="min"
 )
 
 trainer = Trainer(
-    max_steps=150000,
+    max_steps=args.max_steps,
     callbacks=[checkpoint_callback, early_stop_callback],
     default_root_dir=args.ckpt_path,
-    log_every_n_steps=50,
-    val_check_interval=1500,
-    deterministic=args.verbose,
+    log_every_n_steps=args.log_every_n_steps,
+    val_check_interval=args.val_check_interval,
+    check_val_every_n_epoch=None,
+    deterministic=True,
     accelerator="gpu",
     devices=[args.device]
 )
 
 trainer.fit(model, datamodule=datamodule)
-test_acc = trainer.test(model, datamodule=datamodule, ckpt_path="best")
+trainer.test(model, datamodule=datamodule, ckpt_path="best")
 
 results_path = Path(args.results_path)
 results_path.parent.mkdir(parents=True, exist_ok=True)
 
 with open(results_path, "wb") as file:
-    pkl.dump({"test_acc": test_acc, "args": vars(args)}, file)
+    pkl.dump({"test_results": model.test_results, "args": vars(args)}, file)

@@ -10,8 +10,8 @@ class LtSketchClassification(pl.LightningModule):
         self.input_handler = input_handler
         self.lr = lr
         self.criterion = torch.nn.CrossEntropyLoss()
-        self.acc = Accuracy(num_classes=345)
-        self.conf_matrix = ConfusionMatrix(num_classes=345)
+        self.acc = Accuracy(task="multiclass", num_classes=345)
+        self.conf_matrix = ConfusionMatrix(task="multiclass", num_classes=345)
 
     def forward(self, x):
         x = self.input_handler.seq(x)
@@ -34,14 +34,14 @@ class LtSketchClassification(pl.LightningModule):
         self.acc.update(pred, batch['label'])
         self.conf_matrix.update(pred, batch['label'])
 
-    def test_epoch_end(self):
+    def on_test_epoch_end(self):
         acc = self.acc.compute()
         conf = self.conf_matrix.compute()
         self.conf_matrix.reset()
         self.acc.reset()
-        self.log('final_test_accuracy', acc, prog_bar=True)
+        self.log('test_acc', acc, prog_bar=True)
         
-        return {
+        self.test_results = {
             "test_acc": acc.item(),
             "conf_matrix": conf.cpu().numpy()
         }
