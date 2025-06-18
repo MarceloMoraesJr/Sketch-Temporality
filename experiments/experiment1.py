@@ -23,7 +23,7 @@ parser.add_argument("--num_workers", type=int, default=8)
 parser.add_argument("--max_steps", type=int, default=150000)
 parser.add_argument("--val_check_interval", type=int, default=1500)
 parser.add_argument("--patience", type=int, default=15)
-parser.add_argument("--log_every_n_steps", type=int, default=1500)
+parser.add_argument("--log_every_n_steps", type=int, default=500)
 
 #architecture arguments
 parser.add_argument("--num_layers", type=int, default=4)
@@ -62,7 +62,7 @@ sketchformer = SketchformerClassifier(
 
 
 input_handler = InputHandler()
-model = LtSketchClassification(sketchformer, input_handler)
+model = LtSketchClassification(sketchformer, input_handler, args.lr)
 datamodule = LtQuickDraw(dataset_path="../sketch_representations/data/quickdraw/",
                         dataset_args={"relative_coords": args.relative_coords},
                         loader_args={"seed": args.seed,
