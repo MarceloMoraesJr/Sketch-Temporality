@@ -70,14 +70,13 @@ def preprocess_sketch(sketch):
 
 
 class QuickDrawDataset(Dataset):
-    def __init__(self, root, split='train', train_sample=0.1, sample_seed=42, relative_coords=True):
+    def __init__(self, root, split='train', train_sample=0.1, sample_seed=42):
         super().__init__()
 
         self.root_path = pathlib.Path(root)
         self.raw_path = self.root_path.joinpath("raw")
         self.preprocessed_path = self.root_path.joinpath("preprocessed")
 
-        
         #TODO - implement and move the dataset download script into this code
         if not self.raw_path.exists():
             pass 
@@ -90,24 +89,19 @@ class QuickDrawDataset(Dataset):
 
         data = []
         labels = []
-        for label, filename in enumerate(os.listdir(self.preprocessed_path)):
+        for label, filename in enumerate(os.listdir(self.preprocessed_path)[:100]):
             data.append(np.load(self.preprocessed_path.joinpath(filename), encoding='latin1', allow_pickle=True)[split])
             labels.append(np.full(len(data[-1]), label, dtype=np.int64))        
 
         self.data = np.concat(data)
         self.labels = np.concat(labels)
-        self.relative_coords = relative_coords
         
     def __len__(self):
         return len(self.data)
     
     def __getitem__(self, index):
-        if self.relative_coords:
-            columns = [0, 1]
-        else:
-            columns = [2, 3]
-
-        pos = self.data[index][:, columns]
+        pos_relative = self.data[index][:, [0, 1]]
+        pos_absolute = self.data[index][:, [2, 3]]
         pen_state = self.data[index][:, [4, 5, 6]]
 
         stroke_id = self.data[index][:, -2].astype(np.int32)
@@ -115,7 +109,8 @@ class QuickDrawDataset(Dataset):
         label = self.labels[index]
 
         return {
-            'pos': pos, 
+            'pos_relative': pos_relative,
+            'pos_absolute': pos_absolute, 
             'pen_state': pen_state, 
             'stroke_id': stroke_id, 
             'stroke_pos': stroke_pos, 
@@ -160,12 +155,15 @@ class QuickDrawDataset(Dataset):
             new_batch[key] = [torch.tensor(data[key]) for data in batch]
 
         ## get sequence lengths
-        new_batch['length'] = torch.tensor([t.shape[0] for t in new_batch['pos']])
+        new_batch['length'] = torch.tensor([t.shape[0] for t in new_batch['pos_relative']])
         ## padd
-        new_batch['pos'] = torch.nn.utils.rnn.pad_sequence(new_batch['pos'])
-        new_batch['pos'] = new_batch['pos'].permute(1, 0, 2)
+        new_batch['pos_relative'] = torch.nn.utils.rnn.pad_sequence(new_batch['pos_relative'])
+        new_batch['pos_relative'] = new_batch['pos_relative'].permute(1, 0, 2)
+
+        new_batch['pos_absolute'] = torch.nn.utils.rnn.pad_sequence(new_batch['pos_absolute'])
+        new_batch['pos_absolute'] = new_batch['pos_absolute'].permute(1, 0, 2)
         ## compute mask
-        new_batch['mask'] = torch.zeros(new_batch['pos'].shape[0], new_batch['pos'].shape[1], dtype=torch.bool)
+        new_batch['mask'] = torch.zeros(new_batch['pos_relative'].shape[0], new_batch['pos_relative'].shape[1], dtype=torch.bool)
         
         for i, length in enumerate(new_batch['length']):
             new_batch['mask'][i, :length] = True
@@ -176,6 +174,6 @@ class QuickDrawDataset(Dataset):
         new_batch['label'] = torch.tensor(new_batch['label'])
 
         new_batch['batch_size'] = torch.tensor(len(batch))
-        new_batch['batch_length'] = torch.tensor(new_batch['pos'].shape[1])
+        new_batch['batch_length'] = torch.tensor(new_batch['pos_relative'].shape[1])
 
         return new_batch

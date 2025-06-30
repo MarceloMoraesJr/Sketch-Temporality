@@ -1,3 +1,3 @@
-from .quickdraw import QuickDrawDataset, normalize_absolute_coords
-from .input_handler import InputHandler
+from .quickdraw import QuickDrawDataset
+from .handler import InputHandler, OutputHandler
 from .lt_quickdraw import LtQuickDraw
