@@ -45,7 +45,7 @@ class DecoderWrapper(nn.Module):
 
             decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
 
-        elif decoder_type in ["nar-enc"]:
+        elif decoder_type == "nar-enc":
             decoder_layer = nn.TransformerEncoderLayer(
                 d_model=hidden_dim,
                 norm_first=True,
@@ -67,27 +67,29 @@ class DecoderWrapper(nn.Module):
     
         self.decoder = decoder
 
-    def forward(self, x, h_sketch, cache, mask):
-        if self.decoder_type == "ar":
-            output = self.decoder(x, h_sketch, cache)
-        elif self.decoder_type == "ar-enc":
+    def forward(self, x, h_sketch, mask):
+        # No cross-attention
+        if self.decoder_type in ["ar-enc", "nar-enc", "ffn"]:
             x = x + h_sketch
-            output = self.decoder(x, None, cache)
+            h_sketch = None
+
+        # Autoregressive decoders
+        if self.decoder_type in ["ar", "ar-enc"]:
+            cache = None
+            if self.training:
+                output, _ = self.decoder(x, h_sketch, cache)
+            else:
+                for i in range(x.shape[1]):
+                    output, cache = self.decoder(x[:, [i]], h_sketch, cache)
+        # Non-autoregressive decoders
         elif self.decoder_type == "nar":
             output = self.decoder(x, h_sketch, tgt_is_causal=False, tgt_key_padding_mask=~mask)
         elif self.decoder_type == "nar-enc":
-            x = x + h_sketch
             output = self.decoder(x, src_key_padding_mask=~mask)
         elif self.decoder_type == "ffn":
-            x = x + h_sketch
             output = self.decoder(x)
-        
-        if isinstance(output, tuple):
-            x, cache = output
-        else:
-            x = output
 
-        return x, cache
+        return output
 
 
 
@@ -135,7 +137,7 @@ class Sketchformer(nn.Module):
 
         return x
     
-    def decode(self, h_sketch, pos, pos_info, token_ids, cache=None, mask=None):
+    def decode(self, h_sketch, pos, pos_info, token_ids, mask=None):
         if self.encoder_only:
             raise Exception("Encoder only model")
 
@@ -144,12 +146,12 @@ class Sketchformer(nn.Module):
         x = self.token_emb(pos, token_ids)
         x = self.pos_emb(x, pos_info)
         
-        x, cache = self.decoder(x, h_sketch, cache, mask)
+        x = self.decoder(x, h_sketch, mask)
 
         x = self.ln_decoder(x)
         x = self.out_proj(x)
         
-        return x, cache
+        return x
 
-    def forward(self, pos, pos_info, mask, pool=True):
-        return self.encode(pos, pos_info, mask, pool)
+    def forward(self, pos, pos_info, token_ids, mask, pool=True):
+        return self.encode(pos, pos_info, token_ids, mask, pool)
