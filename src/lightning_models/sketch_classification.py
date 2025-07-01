@@ -14,22 +14,25 @@ class LtSketchClassification(pl.LightningModule):
         self.conf_matrix = ConfusionMatrix(task="multiclass", num_classes=345)
 
     def forward(self, x):
-        x = self.input_handler.seq(x)
+        x = self.input_handler(x)
         logits = self.sketchformer(x['pos'], x['pos_info'], x['token_id'], x['mask'])
         return logits
 
     def training_step(self, batch, batch_idx):
+        self.input_handler.set_mode("train")
         logits = self(batch)
         loss = self.criterion(logits, batch['label'])
         self.log("train_loss", loss, batch_size=batch['batch_size'])
         return loss
 
     def validation_step(self, batch, batch_idx):
+        self.input_handler.set_mode("validation")
         logits = self(batch)
         loss = self.criterion(logits, batch['label'])
         self.log("val_loss", loss, prog_bar=True, batch_size=batch['batch_size'])
 
     def test_step(self, batch, batch_idx):
+        self.input_handler.set_mode("test")
         pred = self(batch).argmax(dim=1)
         self.acc.update(pred, batch['label'])
         self.conf_matrix.update(pred, batch['label'])

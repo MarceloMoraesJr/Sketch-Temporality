@@ -15,15 +15,15 @@ warnings.filterwarnings("ignore", message=".*tensorboardX.*")
 parser = argparse.ArgumentParser()
 #training arguments
 parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--device", type=int, default=0)
+parser.add_argument("--device", type=int, default=1)
 parser.add_argument("--batch_size", type=int, default=512)
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--hidden_dropout", type=float, default=0.1)
 parser.add_argument("--num_workers", type=int, default=8)
-parser.add_argument("--max_steps", type=int, default=1368 * 10)
-parser.add_argument("--val_check_interval", type=int, default=1368//4)
+parser.add_argument("--max_steps", type=int, default=200000)
+parser.add_argument("--val_check_interval", type=int, default=1500)
 parser.add_argument("--patience", type=int, default=15)
-parser.add_argument("--log_every_n_steps", type=int, default=1368//4)
+parser.add_argument("--log_every_n_steps", type=int, default=500)
 
 #architecture arguments
 parser.add_argument("--num_encoder_layers", type=int, default=4)
@@ -65,10 +65,10 @@ sketchformer = Sketchformer(
 
 
 
-input_handler = InputHandler(input_relative_coords=args.input_relative_coords, output_relative_coords=args.output_relative_coords, autoregressive=args.decoder_type in ["ar", "ar-enc"])
+input_handler = InputHandler(input_relative_coords=args.input_relative_coords, output_relative_coords=args.output_relative_coords, autoencoder=True, autoregressive=args.decoder_type in ["ar", "ar-enc"])
 output_handler = OutputHandler(output_relative_coords=args.output_relative_coords, autoregressive=args.decoder_type in ["ar", "ar-enc"])
 model = LtSketchReconstruction(sketchformer, input_handler, output_handler, args.lr)
-datamodule = LtQuickDraw(dataset_path="../sketch_representations/data/quickdraw/",
+datamodule = LtQuickDraw(dataset_path="./data/quickdraw/",
                         loader_args={"seed": args.seed,
                                     "num_workers": args.num_workers,
                                     "batch_size": args.batch_size})

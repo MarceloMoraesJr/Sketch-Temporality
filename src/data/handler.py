@@ -8,9 +8,10 @@ class InputHandler():
         "NAR": 2
     }
 
-    def __init__(self, input_relative_coords=True, output_relative_coords=True, mode="train", autoregressive=True):
+    def __init__(self, input_relative_coords=True, output_relative_coords=None, autoencoder=False, mode="train", autoregressive=True):
         self.input_relative_coords = input_relative_coords
         self.output_relative_coords = output_relative_coords
+        self.autoencoder = autoencoder
         self.set_mode(mode)
         self.autoregressive = autoregressive
 
@@ -53,7 +54,7 @@ class InputHandler():
     def _prepare_encoder_only_input(self, batch):
         B, L = batch['batch_size'], batch['batch_length']
         model_input = deepcopy(batch)
-        model_input['token_id'] = torch.zeros(B, L, dtype=batch['stroke_id'].dtype) + InputHandler.token_to_id['POS']
+        model_input['token_id'] = torch.zeros(B, L, dtype=batch['stroke_id'].dtype, device=batch['stroke_id'].device) + InputHandler.token_to_id['POS']
         model_input['pos'] = model_input['pos_relative'] if self.input_relative_coords else model_input['pos_absolute']
         del model_input['pos_relative']
         del model_input['pos_absolute']
@@ -69,7 +70,7 @@ class InputHandler():
         model_input['encoder']['token_id'] = torch.zeros(B, L, dtype=batch['stroke_id'].dtype, device=batch['stroke_id'].device) + InputHandler.token_to_id['POS']
 
         model_input['encoder']['pos'] = batch['pos_relative'] if self.input_relative_coords else batch['pos_absolute']
-        model_input['ground_truth'] = batch['pos_relative'] if self.output_relative_coords and self.mode != "test" else batch['pos_absolute']
+        model_input['targets'] = batch['pos_relative'] if self.output_relative_coords and self.mode != "test" else batch['pos_absolute']
 
         del model_input['encoder']['pos_relative']
         del model_input['encoder']['pos_absolute']
@@ -86,8 +87,8 @@ class InputHandler():
 
         return model_input
     
-    def __call__(self, batch, autoencoder=True):
-        if autoencoder:
+    def __call__(self, batch):
+        if self.autoencoder:
             return self._prepare_autoencoder_input(batch)
         
         return self._prepare_encoder_only_input(batch)

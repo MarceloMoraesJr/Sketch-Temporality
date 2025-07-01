@@ -61,10 +61,9 @@ sketchformer = SketchformerClassifier(
 
 
 
-input_handler = InputHandler()
+input_handler = InputHandler(input_relative_coords=args.relative_coords, autoencoder=False)
 model = LtSketchClassification(sketchformer, input_handler, args.lr)
-datamodule = LtQuickDraw(dataset_path="../sketch_representations/data/quickdraw/",
-                        dataset_args={"relative_coords": args.relative_coords},
+datamodule = LtQuickDraw(dataset_path="./data/quickdraw/",
                         loader_args={"seed": args.seed,
                                     "num_workers": args.num_workers,
                                     "batch_size": args.batch_size})
@@ -76,13 +75,15 @@ checkpoint_callback = ModelCheckpoint(
     dirpath=args.ckpt_path,
     mode="min",
     save_top_k=1,
-    filename="best"
+    filename="best",
+    verbose=True
 )
 
 early_stop_callback = EarlyStopping(
     monitor="val_loss",
     patience=args.patience,
-    mode="min"
+    mode="min",
+    verbose=True
 )
 
 trainer = Trainer(
