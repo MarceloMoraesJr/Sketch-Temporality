@@ -89,7 +89,7 @@ class QuickDrawDataset(Dataset):
 
         data = []
         labels = []
-        for label, filename in enumerate(os.listdir(self.preprocessed_path)[:100]):
+        for label, filename in enumerate(os.listdir(self.preprocessed_path)):
             data.append(np.load(self.preprocessed_path.joinpath(filename), encoding='latin1', allow_pickle=True)[split])
             labels.append(np.full(len(data[-1]), label, dtype=np.int64))        
 
