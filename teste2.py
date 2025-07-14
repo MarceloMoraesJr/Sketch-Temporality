@@ -1,22 +1,20 @@
 import torch
-import numpy as np
-import random
+from src.data import SPGDataset
 
-def test_reproducibility():
-    torch.manual_seed(42)
-    np.random.seed(42)
-    random.seed(42)
+dataset = SPGDataset("./data/spg/", 3, split="train-1")
+label = []
+for data in dataset:
+    label.append(torch.tensor(data['label']))
 
-    torch.use_deterministic_algorithms(True)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+label = torch.cat(label)
+print(label.unique())
 
-    x = torch.randn(1000, 1000, device='cuda')
-    y = torch.randn(1000, 1000, device='cuda')
+import os
+total_labels = 0
+for filename in os.listdir("data/spg/categories/"):
+    with open(f"data/spg/categories/{filename}") as file:
+        for line in file:
+            if line.strip():
+                total_labels += 1
 
-    for i in range(5):
-        out = torch.matmul(x, y)
-        print(f"Run {i}: sum={out.sum().item()}")
-
-test_reproducibility()
-
+print(total_labels)
