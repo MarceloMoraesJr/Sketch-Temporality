@@ -5,9 +5,11 @@ import pathlib
 import json
 from torch.utils.data import Dataset
 from sklearn.model_selection import ShuffleSplit, train_test_split
-
 from tqdm import tqdm
 
+from src.data import PerturbationsConfig
+
+    
 #SOURCE CODE FROM: https://soulhackerslabs.com/normalizing-feature-scaling-point-clouds-for-machine-learning-8138c6e69f5
 def normalize_absolute_coords(points):
 	centroid = np.mean(points, axis=0)
@@ -28,7 +30,7 @@ def normalize_relative_coords(points, bounds):
     return points
 
 
-def preprocess_sketch(sketch):
+def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
     data = np.zeros((len(sketch), 10), dtype=np.float32)
 
     abs_point = np.zeros(2)
@@ -53,28 +55,92 @@ def preprocess_sketch(sketch):
     
     data[-1, 5] = 0
     data[-1, 6] = 1
+
+    pos_relative = data[:, [0, 1]]
+    pos_absolute = data[:, [2, 3]]
+    pen_state = data[:, [4, 5, 6]]
+
+    stroke_id = data[:, -3].astype(np.int32)
+    stroke_pos = data[:, -2].astype(np.int32)
+    label = sketch[:, -1].astype(np.int32)
+
+    #Position Perturbations
+    pos_idx = np.arange(len(sketch))
+    if perturbations.inter_stroke:
+        pos_idx = pos_generator.permutation(len(sketch))
+    elif perturbations.intra_stroke:
+        for stroke in np.unique(stroke_id):
+            pos_idx[stroke == stroke_id] = pos_idx[stroke == stroke_id][pos_generator.permutation((stroke == stroke_id).sum())]
+    elif perturbations.intra_stroke_rev:
+        unique_stroke_id = np.unique(stroke_id)
+        for stroke in unique_stroke_id[pos_generator.permutation(len(unique_stroke_id))[:len(unique_stroke_id)//2 + 1]]:
+            pos_idx[stroke == stroke_id] = pos_idx[stroke == stroke_id][::-1]
+
+    pos_absolute = pos_absolute[pos_idx]
+    label = label[pos_idx]
+
+    #Stroke Order Perturbation
+    stroke_idx = np.arange(len(sketch))
+    if perturbations.stroke_order:
+        unique_groups = np.unique(stroke_id)
+        permuted_strokes = unique_groups[stroke_generator.permutation(len(unique_groups))]
+        mapping = {old.item(): new.item() for old, new in zip(unique_groups, permuted_strokes)}
+        permuted_strokes = np.array([mapping[g.item()] for g in stroke_id])
+        original_index = np.arange(len(permuted_strokes))
+        composite_index = permuted_strokes * len(permuted_strokes) + original_index
+
+        stroke_id = permuted_strokes
+        stroke_idx = np.argsort(composite_index)
+
+    pos_absolute = pos_absolute[stroke_idx]
+    pos_relative = np.concat((pos_absolute[0, None], np.diff(pos_absolute, axis=0)), axis=0)
+    label = label[stroke_idx]
+
+    stroke_id = stroke_id[stroke_idx]
+    pen_state[-1] = [0., 1., 0.]
+    pen_state = pen_state[stroke_idx]
+    pen_state[-1] = [0., 0., 1.]
+    stroke_pos = stroke_pos[stroke_idx]
+
     
+    #Store Perturbation    
+    data[:, [0, 1]] = pos_relative
+    data[:, [2, 3]] = pos_absolute
+    data[:, [4, 5, 6]] = pen_state
+
+    data[:, -3] = stroke_id.astype(np.float32)
+    data[:, -2] = stroke_pos.astype(np.float32)
+    data[:, -1] = label.astype(np.float32)
+
     # Relative Coords Normalization
     bounds = np.zeros(4, dtype=np.float32)
-    bounds[[0, 2]] = np.min(data[:, 2:4], axis=0)
-    bounds[[1, 3]] = np.max(data[:, 2:4], axis=0)
-    data[:, :2] = normalize_relative_coords(data[:, :2], bounds)
+    bounds[[0, 2]] = np.min(pos_absolute, axis=0)
+    bounds[[1, 3]] = np.max(pos_absolute, axis=0)
+    data[:, :2] = normalize_relative_coords(pos_relative, bounds)
 
     # Absolute Coords Normalization
-    data[:, 2:4] = normalize_absolute_coords(data[:, 2:4])
-    data[:, -1] = sketch[:, -1]
+    data[:, 2:4] = normalize_absolute_coords(pos_absolute)
     return data
 
 
 
 class SPGDataset(Dataset):
-    def __init__(self, root, num_splits=5, split='train-0', train_sample=650, valid_sample=50, test_sample=100, sample_seed=42):
+    def __init__(self, root, num_splits=5, split='train-0', train_sample=650, valid_sample=50, test_sample=100, sample_seed=42, perturbations = PerturbationsConfig()):
         super().__init__()
 
         self.root_path = pathlib.Path(root)
         self.raw_path = self.root_path.joinpath("raw")
         self.categories_path = self.root_path.joinpath("categories")
-        self.preprocessed_path = self.root_path.joinpath("preprocessed")
+
+        perturbation_path = [k for k,v in perturbations.__dict__.items() if v]
+        perturbation_path = "_".join(perturbation_path)
+        preprocessed_path = "preprocessed"
+        if len(perturbation_path) > 0:
+            preprocessed_path += "_" + perturbation_path
+
+        self.preprocessed_path = self.root_path.joinpath(preprocessed_path)
+        
+        self.perturbations = perturbations
 
         #TODO - implement and move the dataset download script into this code
         if not self.raw_path.exists():
@@ -120,7 +186,8 @@ class SPGDataset(Dataset):
         pass
 
     def _preprocess(self):
-        np.random.seed(self.sample_seed)
+        pos_generator = np.random.RandomState(self.sample_seed)
+        stroke_generator = np.random.RandomState(self.sample_seed)
 
         total_labels = 0
         for filename in tqdm(os.listdir(self.raw_path)):
@@ -130,7 +197,7 @@ class SPGDataset(Dataset):
             processed_sketches = []
             for sketch in raw_data['train_data']:
                 sketch = np.array(sketch, dtype=np.float32)
-                sketch = preprocess_sketch(sketch)
+                sketch = preprocess_sketch(sketch, self.perturbations, pos_generator, stroke_generator)
                 sketch[:, -1] = sketch[:, -1] + total_labels
                 processed_sketches.append(sketch)
             

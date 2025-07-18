@@ -6,7 +6,7 @@ from pytorch_lightning import Trainer, seed_everything
 from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
 
 from src.models import SketchformerClassifier, BlockConfig, PosEmbeddingConfig
-from src.data import InputHandler, LtQuickDraw
+from src.data import InputHandler, LtQuickDraw, PerturbationsConfig
 from src.lightning_models import LtSketchClassification
 
 import warnings
@@ -35,6 +35,12 @@ parser.add_argument("--pen_state", action=argparse.BooleanOptionalAction, defaul
 parser.add_argument("--stroke_embedding", action=argparse.BooleanOptionalAction, default=False)
 parser.add_argument("--sketch_pos", action=argparse.BooleanOptionalAction, default=True)
 parser.add_argument("--stroke_pos", action=argparse.BooleanOptionalAction, default=False)
+
+#perturbation arguments
+parser.add_argument("--inter_stroke", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--intra_stroke", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--intra_stroke_rev", action=argparse.BooleanOptionalAction, default=False)
+parser.add_argument("--stroke_order", action=argparse.BooleanOptionalAction, default=False)
 
 #general arguments
 parser.add_argument("--ckpt_path", type=str)
@@ -66,7 +72,13 @@ model = LtSketchClassification(sketchformer, input_handler, args.lr)
 datamodule = LtQuickDraw(dataset_path="./data/quickdraw/",
                         loader_args={"seed": args.seed,
                                     "num_workers": args.num_workers,
-                                    "batch_size": args.batch_size})
+                                    "batch_size": args.batch_size},
+                        perturbations=PerturbationsConfig(
+                            inter_stroke=args.inter_stroke,
+                            intra_stroke=args.intra_stroke,
+                            intra_stroke_rev=args.intra_stroke_rev,
+                            stroke_order=args.stroke_order
+                        ))
 
 
 

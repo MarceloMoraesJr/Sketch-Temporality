@@ -4,7 +4,7 @@ from torchmetrics import ConfusionMatrix, Accuracy
 
 
 class LtSketchClassification(pl.LightningModule):
-    def __init__(self, sketchformer, input_handler, lr=1e-3):
+    def __init__(self, sketchformer, input_handler, lr=1e-3, finetuning=False):
         super().__init__()
         self.sketchformer = sketchformer
         self.input_handler = input_handler
@@ -12,6 +12,8 @@ class LtSketchClassification(pl.LightningModule):
         self.criterion = torch.nn.CrossEntropyLoss()
         self.acc = Accuracy(task="multiclass", num_classes=345)
         self.conf_matrix = ConfusionMatrix(task="multiclass", num_classes=345)
+
+        self.finetuning = finetuning 
 
     def forward(self, x):
         x = self.input_handler(x)
@@ -50,4 +52,10 @@ class LtSketchClassification(pl.LightningModule):
         }
 
     def configure_optimizers(self):
+        if type(self.lr) == dict:
+            return torch.optim.Adam([
+                {'params': self.sketchformer.sketchformer.parameters(), 'lr': self.lr['sketchformer']},
+                {'params': self.sketchformer.classifier.parameters(), 'lr': self.lr['classifier']}
+            ])
+
         return torch.optim.Adam(self.parameters(), lr=self.lr)
