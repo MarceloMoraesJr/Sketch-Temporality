@@ -1,7 +1,8 @@
 import torch
 import pytorch_lightning as pl
 import torch.nn.functional as F
-from src.data import SPGDataset, PerturbationsConfig
+from .spg import SPGDataset
+from .perturbations_config import PerturbationsConfig
 
 class LtSPG(pl.LightningDataModule):
     def __init__(self, split, dataset_path, loader_args, perturbations=PerturbationsConfig()):

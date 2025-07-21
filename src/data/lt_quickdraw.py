@@ -1,7 +1,8 @@
 import torch
 import pytorch_lightning as pl
 import torch.nn.functional as F
-from src.data import QuickDrawDataset, PerturbationsConfig
+from .quickdraw import QuickDrawDataset
+from .perturbations_config import PerturbationsConfig
 
 class LtQuickDraw(pl.LightningDataModule):
     def __init__(self, dataset_path, loader_args, perturbations=PerturbationsConfig()):

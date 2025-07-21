@@ -5,7 +5,7 @@ import pathlib
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from src.data import PerturbationsConfig
+from .perturbations_config import PerturbationsConfig
 
 #SOURCE CODE FROM: https://soulhackerslabs.com/normalizing-feature-scaling-point-clouds-for-machine-learning-8138c6e69f5
 def normalize_absolute_coords(points):

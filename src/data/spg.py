@@ -7,7 +7,7 @@ from torch.utils.data import Dataset
 from sklearn.model_selection import ShuffleSplit, train_test_split
 from tqdm import tqdm
 
-from src.data import PerturbationsConfig
+from .perturbations_config import PerturbationsConfig
 
     
 #SOURCE CODE FROM: https://soulhackerslabs.com/normalizing-feature-scaling-point-clouds-for-machine-learning-8138c6e69f5
