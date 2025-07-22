@@ -1,3 +1,4 @@
+import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
@@ -19,10 +20,12 @@ class BlockConfig():
 
 
 class DecoderWrapper(nn.Module):
-    def __init__(self, decoder_type: str, hidden_dim: int, num_decoder_layers: int, block_config: BlockConfig):
+    def __init__(self, decoder_type: str, hidden_dim: int, num_decoder_layers: int, token_emb: TokenEmbedding, pos_emb: PosEmbedding, block_config: BlockConfig):
         super(DecoderWrapper, self).__init__()
 
         self.decoder_type = decoder_type
+        self.token_emb = token_emb
+        self.pos_emb = pos_emb
 
         if decoder_type in ["ar", "ar-enc"]:
             decoder_layer = CausalTransformerDecoderLayer(
@@ -67,9 +70,15 @@ class DecoderWrapper(nn.Module):
     
         self.decoder = decoder
 
-    def forward(self, x, h_sketch, mask):
+    def forward(self, h_sketch, pos, pos_info, token_ids, mask):
+        x = self.token_emb(pos, token_ids)
+
+        # Adds PE excepts for AR at inference
+        if self.decoder_type not in ["ar", "ar-enc"] or self.training:
+            x = self.pos_emb(x, pos_info)
+        
         # No cross-attention
-        if self.decoder_type in ["ar-enc", "nar-enc", "ffn"]:
+        if self.decoder_type in ["nar-enc", "ffn"] or (self.decoder_type == "ar-enc" and self.training):
             x = x + h_sketch
             h_sketch = None
 
@@ -79,8 +88,19 @@ class DecoderWrapper(nn.Module):
             if self.training:
                 output, _ = self.decoder(x, h_sketch, cache)
             else:
+                pred = x[:, [0]] #SOS token
                 for i in range(x.shape[1]):
-                    output, cache = self.decoder(x[:, [i]], h_sketch, cache)
+                    step_pos_info = {k: v[:, :i+1] for k, v in pos_info.items()}
+                    x = self.pos_emb(pred, step_pos_info)
+
+                    # No cross-attention while AR inference
+                    if self.decoder_type == "ar-enc":
+                        x = x + h_sketch
+                        output, cache = self.decoder(x, None, cache)
+                    else:
+                        output, cache = self.decoder(x, h_sketch, cache)
+
+                    pred = torch.cat([pred, output[:, [-1]]], dim=1)
         # Non-autoregressive decoders
         elif self.decoder_type == "nar":
             output = self.decoder(x, h_sketch, tgt_is_causal=False, tgt_key_padding_mask=~mask)
@@ -104,6 +124,9 @@ class Sketchformer(nn.Module):
                  pos_embedding_config: PosEmbeddingConfig = PosEmbeddingConfig(),
                 ):        
         super(Sketchformer, self).__init__()
+        
+        self.token_emb = TokenEmbedding(hidden_dim, **token_embedding_config.__dict__)
+        self.pos_emb = PosEmbedding(hidden_dim, **pos_embedding_config.__dict__)
 
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=hidden_dim,
@@ -119,12 +142,10 @@ class Sketchformer(nn.Module):
         self.encoder_only = decoder_type is None or num_decoder_layers == 0
 
         if not self.encoder_only:
-            self.decoder = DecoderWrapper(decoder_type, hidden_dim, num_decoder_layers, block_config)
+            self.decoder = DecoderWrapper(decoder_type, hidden_dim, num_decoder_layers, self.token_emb, self.pos_emb, block_config)
             self.ln_decoder = nn.LayerNorm(hidden_dim)
             self.out_proj = nn.Linear(hidden_dim, 2)
 
-        self.token_emb = TokenEmbedding(hidden_dim, **token_embedding_config.__dict__)
-        self.pos_emb = PosEmbedding(hidden_dim, **pos_embedding_config.__dict__)
 
     def encode(self, pos, pos_info, token_ids, mask, pool=True):
         x = self.token_emb(pos, token_ids)
@@ -142,11 +163,8 @@ class Sketchformer(nn.Module):
             raise Exception("Encoder only model")
 
         h_sketch = h_sketch.unsqueeze(1)
-
-        x = self.token_emb(pos, token_ids)
-        x = self.pos_emb(x, pos_info)
         
-        x = self.decoder(x, h_sketch, mask)
+        x = self.decoder(h_sketch, pos, pos_info, token_ids, mask)
 
         x = self.ln_decoder(x)
         x = self.out_proj(x)
