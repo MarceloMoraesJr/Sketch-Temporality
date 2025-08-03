@@ -1,3 +1,5 @@
 from .sketch_classification import LtSketchClassification
 from .sketch_reconstruction import LtSketchReconstruction
 from .sketch_segmentation import LtSketchSegmentation
+
+from .sketch_classification_mlp import LtSketchClassificationMLP

@@ -202,7 +202,7 @@ class QuickDrawDataset(Dataset):
 
                 new_data[key] = np.array(new_data[key], dtype=object)
 
-            np.savez_compressed(f"./data/quickdraw/preprocessed/{filename}", **new_data)
+            np.savez_compressed(self.preprocessed_path.joinpath(filename), **new_data)
 
 
     
