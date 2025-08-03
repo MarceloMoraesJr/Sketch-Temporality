@@ -26,6 +26,8 @@ class DecoderWrapper(nn.Module):
         self.decoder_type = decoder_type
         self.token_emb = token_emb
         self.pos_emb = pos_emb
+        self.ln_decoder = nn.LayerNorm(hidden_dim)
+
 
         if decoder_type in ["ar", "ar-enc"]:
             decoder_layer = CausalTransformerDecoderLayer(
@@ -97,8 +99,10 @@ class DecoderWrapper(nn.Module):
                     if self.decoder_type == "ar-enc":
                         x = x + h_sketch
                         output, cache = self.decoder(x, None, cache)
+                        output = self.ln_decoder(output)
                     else:
                         output, cache = self.decoder(x, h_sketch, cache)
+                        output = self.ln_decoder(output)
 
                     pred = torch.cat([pred, output[:, [-1]]], dim=1)
         # Non-autoregressive decoders
@@ -108,6 +112,10 @@ class DecoderWrapper(nn.Module):
             output = self.decoder(x, src_key_padding_mask=~mask)
         elif self.decoder_type == "ffn":
             output = self.decoder(x)
+
+        # Last layer norm except for AR at inference 
+        if self.decoder_type not in ["ar", "ar-enc"] or self.training:
+            output = self.ln_decoder(output)
 
         return output
 
@@ -143,7 +151,6 @@ class Sketchformer(nn.Module):
 
         if not self.encoder_only:
             self.decoder = DecoderWrapper(decoder_type, hidden_dim, num_decoder_layers, self.token_emb, self.pos_emb, block_config)
-            self.ln_decoder = nn.LayerNorm(hidden_dim)
             self.out_proj = nn.Linear(hidden_dim, 2)
 
 
@@ -166,7 +173,6 @@ class Sketchformer(nn.Module):
         
         x = self.decoder(h_sketch, pos, pos_info, token_ids, mask)
 
-        x = self.ln_decoder(x)
         x = self.out_proj(x)
         
         return x
