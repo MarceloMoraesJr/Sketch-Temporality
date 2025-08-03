@@ -1,2 +1,3 @@
 from .sketchformer import Sketchformer, BlockConfig, PosEmbeddingConfig, TokenEmbeddingConfig
 from .sketchformer_classifier import SketchformerClassifier
+from .sketchformer_seg import SketchformerSeg

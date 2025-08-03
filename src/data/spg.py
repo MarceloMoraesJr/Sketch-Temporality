@@ -1,12 +1,15 @@
 import os 
 import numpy as np
 import torch
-import pathlib 
+import pathlib
+import json
 from torch.utils.data import Dataset
+from sklearn.model_selection import ShuffleSplit, train_test_split
 from tqdm import tqdm
 
 from .perturbations_config import PerturbationsConfig
 
+    
 #SOURCE CODE FROM: https://soulhackerslabs.com/normalizing-feature-scaling-point-clouds-for-machine-learning-8138c6e69f5
 def normalize_absolute_coords(points):
 	centroid = np.mean(points, axis=0)
@@ -28,11 +31,7 @@ def normalize_relative_coords(points, bounds):
 
 
 def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
-    data = np.zeros((len(sketch), 9), dtype=np.float32)
-
-    # same value clip used in SketchRNN and Sketchformer preprocessing
-    sketch = np.minimum(sketch, 1000)
-    sketch = np.maximum(sketch, -1000)
+    data = np.zeros((len(sketch), 10), dtype=np.float32)
 
     abs_point = np.zeros(2)
     stroke_id = 0
@@ -43,8 +42,8 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
     for i in range(len(sketch)):
         abs_point += sketch[i, :2]
         data[i, 2:4] = abs_point
-        data[i, -2] = stroke_id
-        data[i, -1] = stroke_pos
+        data[i, -3] = stroke_id
+        data[i, -2] = stroke_pos
 
         if sketch[i, 2] == 0:
             data[i, 4] = 1
@@ -56,13 +55,14 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
     
     data[-1, 5] = 0
     data[-1, 6] = 1
-    
+
     pos_relative = data[:, [0, 1]]
     pos_absolute = data[:, [2, 3]]
     pen_state = data[:, [4, 5, 6]]
 
-    stroke_id = data[:, -2].astype(np.int32)
-    stroke_pos = data[:, -1].astype(np.int32)
+    stroke_id = data[:, -3].astype(np.int32)
+    stroke_pos = data[:, -2].astype(np.int32)
+    label = sketch[:, -1].astype(np.int32)
 
     #Position Perturbations
     pos_idx = np.arange(len(sketch))
@@ -77,6 +77,7 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
             pos_idx[stroke == stroke_id] = pos_idx[stroke == stroke_id][::-1]
 
     pos_absolute = pos_absolute[pos_idx]
+    label = label[pos_idx]
 
     #Stroke Order Perturbation
     stroke_idx = np.arange(len(sketch))
@@ -93,6 +94,7 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
 
     pos_absolute = pos_absolute[stroke_idx]
     pos_relative = np.concat((pos_absolute[0, None], np.diff(pos_absolute, axis=0)), axis=0)
+    label = label[stroke_idx]
 
     stroke_id = stroke_id[stroke_idx]
     pen_state[-1] = [0., 1., 0.]
@@ -106,8 +108,9 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
     data[:, [2, 3]] = pos_absolute
     data[:, [4, 5, 6]] = pen_state
 
-    data[:, -2] = stroke_id.astype(np.float32)
-    data[:, -1] = stroke_pos.astype(np.float32)
+    data[:, -3] = stroke_id.astype(np.float32)
+    data[:, -2] = stroke_pos.astype(np.float32)
+    data[:, -1] = label.astype(np.float32)
 
     # Relative Coords Normalization
     bounds = np.zeros(4, dtype=np.float32)
@@ -121,12 +124,13 @@ def preprocess_sketch(sketch, perturbations, pos_generator, stroke_generator):
 
 
 
-class QuickDrawDataset(Dataset):
-    def __init__(self, root, split='train', train_sample=0.1, sample_seed=42, perturbations=PerturbationsConfig()):
+class SPGDataset(Dataset):
+    def __init__(self, root, num_splits=5, split='train-0', train_sample=650, valid_sample=50, test_sample=100, sample_seed=42, perturbations = PerturbationsConfig()):
         super().__init__()
 
         self.root_path = pathlib.Path(root)
         self.raw_path = self.root_path.joinpath("raw")
+        self.categories_path = self.root_path.joinpath("categories")
 
         perturbation_path = [k for k,v in perturbations.__dict__.items() if v]
         perturbation_path = "_".join(perturbation_path)
@@ -135,7 +139,7 @@ class QuickDrawDataset(Dataset):
             preprocessed_path += "_" + perturbation_path
 
         self.preprocessed_path = self.root_path.joinpath(preprocessed_path)
-
+        
         self.perturbations = perturbations
 
         #TODO - implement and move the dataset download script into this code
@@ -143,19 +147,19 @@ class QuickDrawDataset(Dataset):
             pass 
         
         if not self.preprocessed_path.exists():
-            self.train_sample = int(train_sample * 70000)
+            self.num_splits = num_splits
+            self.train_sample = train_sample
+            self.valid_sample = valid_sample
+            self.test_sample = test_sample
             self.sample_seed = sample_seed
             self.preprocessed_path.mkdir()
             self._preprocess()
 
         data = []
-        labels = []
-        for label, filename in enumerate(os.listdir(self.preprocessed_path)):
+        for filename in os.listdir(self.preprocessed_path):
             data.append(np.load(self.preprocessed_path.joinpath(filename), encoding='latin1', allow_pickle=True)[split])
-            labels.append(np.full(len(data[-1]), label, dtype=np.int64))        
 
         self.data = np.concat(data)
-        self.labels = np.concat(labels)
         
     def __len__(self):
         return len(self.data)
@@ -165,9 +169,9 @@ class QuickDrawDataset(Dataset):
         pos_absolute = self.data[index][:, [2, 3]]
         pen_state = self.data[index][:, [4, 5, 6]]
 
-        stroke_id = self.data[index][:, -2].astype(np.int32)
-        stroke_pos = self.data[index][:, -1].astype(np.int32)
-        label = self.labels[index]
+        stroke_id = self.data[index][:, -3].astype(np.int32)
+        stroke_pos = self.data[index][:, -2].astype(np.int32)
+        label = self.data[index][:, -1].astype(np.int32)
 
         return {
             'pos_relative': pos_relative,
@@ -182,26 +186,35 @@ class QuickDrawDataset(Dataset):
         pass
 
     def _preprocess(self):
-        sampler_generator = np.random.RandomState(self.sample_seed)
         pos_generator = np.random.RandomState(self.sample_seed)
         stroke_generator = np.random.RandomState(self.sample_seed)
 
-        splits = ['train', 'valid', 'test']
-
+        total_labels = 0
         for filename in tqdm(os.listdir(self.raw_path)):
-            data = np.load(self.raw_path.joinpath(filename), encoding='latin1', allow_pickle=True)
-            new_data = {key: [] for key in splits}
+            with open(self.raw_path.joinpath(filename), 'r') as file:
+                raw_data = json.load(file)
+
+            processed_sketches = []
+            for sketch in raw_data['train_data']:
+                sketch = np.array(sketch, dtype=np.float32)
+                sketch = preprocess_sketch(sketch, self.perturbations, pos_generator, stroke_generator)
+                sketch[:, -1] = sketch[:, -1] + total_labels
+                processed_sketches.append(sketch)
             
-            for key in splits:
-                sketches = data[key]
-                if key == 'train':
-                    sketches = sketches[sampler_generator.permutation(70000)[:self.train_sample]]
+            new_data = {}
+            spliter = ShuffleSplit(n_splits=self.num_splits, test_size=self.test_sample, random_state=self.sample_seed)
+            idx = np.arange(len(raw_data['train_data']))
+            for i, (train_valid_idx, test_idx) in enumerate(spliter.split(idx)):
+                train_idx, valid_idx = train_test_split(train_valid_idx, test_size=self.valid_sample, random_state=i)
+                new_data[f'train-{i}'] = np.array([processed_sketches[idx] for idx in train_idx], dtype=object)
+                new_data[f'valid-{i}'] = np.array([processed_sketches[idx] for idx in valid_idx], dtype=object)
+                new_data[f'test-{i}'] = np.array([processed_sketches[idx] for idx in test_idx], dtype=object)
 
-                for sketch in sketches:
-                    new_data[key].append(preprocess_sketch(sketch, self.perturbations, pos_generator, stroke_generator))
-
-                new_data[key] = np.array(new_data[key], dtype=object)
-
+            filename = filename.split('.')[0]
+            with open(self.categories_path.joinpath(f"{filename}.txt")) as file:
+                for line in file:
+                    if line.strip():
+                        total_labels += 1
             np.savez_compressed(self.preprocessed_path.joinpath(filename), **new_data)
 
 
@@ -234,8 +247,8 @@ class QuickDrawDataset(Dataset):
         new_batch['pen_state'] = torch.nn.utils.rnn.pad_sequence(new_batch['pen_state']).permute(1, 0, 2)
         new_batch['stroke_id'] = torch.nn.utils.rnn.pad_sequence(new_batch['stroke_id']).permute(1, 0)
         new_batch['stroke_pos'] = torch.nn.utils.rnn.pad_sequence(new_batch['stroke_pos']).permute(1, 0)
-        new_batch['label'] = torch.tensor(new_batch['label'])
-
+        new_batch['label'] = torch.nn.utils.rnn.pad_sequence(new_batch['label']).permute(1, 0).to(torch.int64)
+        
         new_batch['batch_size'] = torch.tensor(len(batch))
         new_batch['batch_length'] = torch.tensor(new_batch['pos_relative'].shape[1])
 
