@@ -17,7 +17,6 @@ class SketchformerClassifier(nn.Module):
             hidden_dim=hidden_dim,
             num_encoder_layers=num_layers,
             num_decoder_layers=0,
-            decoder_type=None,
             block_config=block_config,
             token_embedding_config=token_embedding_config,
             pos_embedding_config=pos_embedding_config

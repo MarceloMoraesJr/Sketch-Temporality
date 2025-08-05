@@ -3,6 +3,7 @@
 *.svg
 *.png
 checkpoints
+configs
 /data/
 results
 __pycache__/

@@ -2,13 +2,13 @@ import torch
 from torch import Tensor
 import torch.nn as nn
 import torch.nn.functional as F
-from dataclasses import dataclass
-from typing import Union, Callable
+from dataclasses import dataclass, field
+from typing import Union, Callable, Optional
 
 from .pos_embedding import PosEmbedding, PosEmbeddingConfig
 from .token_embedding import TokenEmbedding, TokenEmbeddingConfig
 from .causal_transformer_decoder import CausalTransformerDecoder, CausalTransformerDecoderLayer
-from .ffn_layer import FFNLayer
+from .transformer_encoder_mod import TransformerEncoderModified, TransformerEncoderLayerModified, ModificationsConfig
 from .attention_pooling import AttentionPooling
 
 @dataclass
@@ -18,21 +18,33 @@ class BlockConfig():
     dropout: int = 0.1
     activation: Union[str, Callable[[Tensor], Tensor]]= F.gelu
 
+@dataclass
+class DecoderConfig():
+    autoregressive: bool = True
+    cross_attn: bool = True
+    condition_first: bool = False
+    modifications_config: ModificationsConfig = field(default_factory=ModificationsConfig)
+
+    def __post_init__(self):
+        assert self.cross_attn ^ (self.condition_first or self.modifications_config.condition_every) \
+            or (not self.cross_attn and self.condition_first ^ self.modifications_config.condition_every)
+
+
 
 class DecoderWrapper(nn.Module):
-    def __init__(self, decoder_type: str, hidden_dim: int, num_decoder_layers: int, token_emb: TokenEmbedding, pos_emb: PosEmbedding, block_config: BlockConfig):
+    def __init__(self, hidden_dim: int, num_decoder_layers: int, token_emb: TokenEmbedding, pos_emb: PosEmbedding, block_config: BlockConfig, decoder_config: DecoderConfig = DecoderConfig()):
         super(DecoderWrapper, self).__init__()
 
-        self.decoder_type = decoder_type
+        self.decoder_config = decoder_config
         self.token_emb = token_emb
         self.pos_emb = pos_emb
         self.ln_decoder = nn.LayerNorm(hidden_dim)
 
 
-        if decoder_type in ["ar", "ar-enc"]:
+        if decoder_config.autoregressive:
             decoder_layer = CausalTransformerDecoderLayer(
                 d_model=hidden_dim,
-                cross_attention=decoder_type=="ar",
+                cross_attention=decoder_config.cross_attn,
                 norm_first=True,
                 batch_first=True, 
                 **block_config.__dict__
@@ -40,7 +52,7 @@ class DecoderWrapper(nn.Module):
 
             decoder = CausalTransformerDecoder(decoder_layer, num_decoder_layers)
 
-        elif decoder_type == "nar":
+        elif decoder_config.cross_attn:
             decoder_layer = nn.TransformerDecoderLayer(
                     d_model=hidden_dim,
                     norm_first=True,
@@ -50,42 +62,33 @@ class DecoderWrapper(nn.Module):
 
             decoder = nn.TransformerDecoder(decoder_layer, num_decoder_layers)
 
-        elif decoder_type == "nar-enc":
-            decoder_layer = nn.TransformerEncoderLayer(
+        else:
+            decoder_layer = TransformerEncoderLayerModified(
                 d_model=hidden_dim,
                 norm_first=True,
-                batch_first=True, 
+                batch_first=True,
+                modifications_config=decoder_config.modifications_config,
                 **block_config.__dict__
             )
             
-            decoder = nn.TransformerEncoder(decoder_layer, num_decoder_layers, enable_nested_tensor=False)
+            decoder = TransformerEncoderModified(decoder_layer, num_decoder_layers, enable_nested_tensor=False)
 
-        elif decoder_type == "ffn":
-            layers = [FFNLayer(
-                hidden_dim, 
-                block_config.dim_feedforward, 
-                block_config.dropout, 
-                block_config.activation) for _ in range(num_decoder_layers)]
-            decoder = nn.Sequential(*layers)
-        else:
-            raise ValueError("Unknown Decoder Type")
-    
         self.decoder = decoder
 
     def forward(self, h_sketch, pos, pos_info, token_ids, mask):
         x = self.token_emb(pos, token_ids)
 
         # Adds PE excepts for AR at inference
-        if self.decoder_type not in ["ar", "ar-enc"] or self.training:
+        if not self.decoder_config.autoregressive or self.training:
             x = self.pos_emb(x, pos_info)
         
-        # No cross-attention
-        if self.decoder_type in ["nar-enc", "ffn"] or (self.decoder_type == "ar-enc" and self.training):
+        # Sum first only
+        if self.decoder_config.condition_first:
             x = x + h_sketch
             h_sketch = None
 
         # Autoregressive decoders
-        if self.decoder_type in ["ar", "ar-enc"]:
+        if self.decoder_config.autoregressive:
             cache = None
             if self.training:
                 output, _ = self.decoder(x, h_sketch, cache)
@@ -96,7 +99,7 @@ class DecoderWrapper(nn.Module):
                     x = self.pos_emb(pred, step_pos_info)
 
                     # No cross-attention while AR inference
-                    if self.decoder_type == "ar-enc":
+                    if not self.decoder_config.cross_attn:
                         x = x + h_sketch
                         output, cache = self.decoder(x, None, cache)
                         output = self.ln_decoder(output)
@@ -106,15 +109,13 @@ class DecoderWrapper(nn.Module):
 
                     pred = torch.cat([pred, output[:, [-1]]], dim=1)
         # Non-autoregressive decoders
-        elif self.decoder_type == "nar":
+        elif self.decoder_config.cross_attn:
             output = self.decoder(x, h_sketch, tgt_is_causal=False, tgt_key_padding_mask=~mask)
-        elif self.decoder_type == "nar-enc":
-            output = self.decoder(x, src_key_padding_mask=~mask)
-        elif self.decoder_type == "ffn":
-            output = self.decoder(x)
-
+        else:
+            output = self.decoder(x, h_sketch, src_key_padding_mask=~mask)
+    
         # Last layer norm except for AR at inference 
-        if self.decoder_type not in ["ar", "ar-enc"] or self.training:
+        if not self.decoder_config.autoregressive or self.training:
             output = self.ln_decoder(output)
 
         return output
@@ -126,7 +127,7 @@ class Sketchformer(nn.Module):
                  hidden_dim: int,
                  num_encoder_layers: int,
                  num_decoder_layers: int, 
-                 decoder_type: str = "ar",
+                 decoder_config: Optional[DecoderConfig] = None,
                  block_config: BlockConfig = BlockConfig(),
                  token_embedding_config: TokenEmbeddingConfig = TokenEmbeddingConfig(),
                  pos_embedding_config: PosEmbeddingConfig = PosEmbeddingConfig(),
@@ -146,11 +147,11 @@ class Sketchformer(nn.Module):
         self.ln_encoder = nn.LayerNorm(hidden_dim)
         self.pool = AttentionPooling(hidden_dim)
         
-        self.decoder_type = decoder_type
-        self.encoder_only = decoder_type is None or num_decoder_layers == 0
+        self.decoder_config = decoder_config
+        self.encoder_only = decoder_config is None or num_decoder_layers == 0
 
         if not self.encoder_only:
-            self.decoder = DecoderWrapper(decoder_type, hidden_dim, num_decoder_layers, self.token_emb, self.pos_emb, block_config)
+            self.decoder = DecoderWrapper(hidden_dim, num_decoder_layers, self.token_emb, self.pos_emb, block_config, decoder_config)
             self.out_proj = nn.Linear(hidden_dim, 2)
 
 
