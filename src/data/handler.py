@@ -8,12 +8,14 @@ class InputHandler():
         "NAR": 2
     }
 
-    def __init__(self, input_relative_coords=True, output_relative_coords=None, autoencoder=False, mode="train", autoregressive=True):
+    def __init__(self, input_relative_coords=True, output_relative_coords=None, autoencoder=False, mode="train", autoregressive=True, denoising=False, noise_std=0.05):
         self.input_relative_coords = input_relative_coords
         self.output_relative_coords = output_relative_coords
         self.autoencoder = autoencoder
         self.set_mode(mode)
         self.autoregressive = autoregressive
+        self.denoising = denoising
+        self.noise_std = noise_std
 
     def set_mode(self, mode):
         assert mode in ["train", "validation", "test"]
@@ -81,6 +83,9 @@ class InputHandler():
             model_input['decoder'] = deepcopy(model_input['encoder'])
             model_input['decoder']['token_id'] = torch.zeros(B, L, dtype=batch['stroke_id'].dtype, device=batch['stroke_id'].device) + InputHandler.token_to_id['NAR']
             model_input['decoder']['pos'] = torch.zeros_like(batch['pos'], device=model_input['encoder']['pos'].device)
+
+        if self.denoising and self.mode == "train":
+            model_input['encoder']['pos'] += torch.randn_like(model_input['encoder']['pos']) * self.noise_std
 
         model_input['encoder'] = self._prepare(model_input['encoder'])
         model_input['decoder'] = self._prepare(model_input['decoder'])

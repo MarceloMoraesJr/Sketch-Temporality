@@ -40,7 +40,9 @@ base_config = {
         "stroke_embedding": False,
         "sketch_pos": True,
         "stroke_pos": False
-    }
+    },
+    "denoising": False,
+    "noise_std": 0.0
 }
 
 base_config_path = Path("./configs/decoder_studies/base/base_config.yaml")

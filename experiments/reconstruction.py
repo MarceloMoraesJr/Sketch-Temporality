@@ -62,7 +62,7 @@ sketchformer = Sketchformer(
 
 
 
-input_handler = InputHandler(input_relative_coords=config['pe']['input_relative_coords'], output_relative_coords=config['pe']['output_relative_coords'], autoencoder=True, autoregressive=config['architecture']['decoder']['autoregressive'])
+input_handler = InputHandler(input_relative_coords=config['pe']['input_relative_coords'], output_relative_coords=config['pe']['output_relative_coords'], autoencoder=True, autoregressive=config['architecture']['decoder']['autoregressive'], denoising=config['denoising'], noise_std=config['noise_std'])
 output_handler = OutputHandler(output_relative_coords=config['pe']['output_relative_coords'], autoregressive=config['architecture']['decoder']['autoregressive'])
 model = LtSketchReconstruction(sketchformer, input_handler, output_handler, config['training']['lr'])
 datamodule = LtQuickDraw(dataset_path="./data/quickdraw/",
