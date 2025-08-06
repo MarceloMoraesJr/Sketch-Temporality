@@ -85,7 +85,7 @@ class InputHandler():
             model_input['decoder']['pos'] = torch.zeros_like(batch['pos'], device=model_input['encoder']['pos'].device)
 
         if self.denoising and self.mode == "train":
-            model_input['encoder']['pos'] += torch.randn_like(model_input['encoder']['pos']) * self.noise_std
+            model_input['encoder']['pos'] = model_input['encoder']['pos'] + torch.randn_like(model_input['encoder']['pos']) * self.noise_std
 
         model_input['encoder'] = self._prepare(model_input['encoder'])
         model_input['decoder'] = self._prepare(model_input['decoder'])
