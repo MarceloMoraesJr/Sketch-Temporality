@@ -1,34 +1,27 @@
-# parser = argparse.ArgumentParser()
-# #training arguments
-# parser.add_argument("--split", type=int, default=0)
-# parser.add_argument("--seed", type=int, default=42)
-# parser.add_argument("--device", type=int, default=0)
-# parser.add_argument("--batch_size", type=int, default=256)
-# parser.add_argument("--lr", type=float, default=1e-3)
-# parser.add_argument("--hidden_dropout", type=float, default=0.1)
-# parser.add_argument("--num_workers", type=int, default=8)
-# parser.add_argument("--max_epochs", type=int, default=150)
-# parser.add_argument("--patience", type=int, default=15)
+import yaml
+from pathlib import Path
 
-# #architecture arguments
-# parser.add_argument("--num_layers", type=int, default=4)
-# parser.add_argument("--hidden_dim", type=int, default=128)
+config_path = Path("./configs/transfer/ffn/")
+config_path.mkdir(parents=True, exist_ok=True)
 
-# #positional embedding arguments
-# parser.add_argument("--relative_coords", action=argparse.BooleanOptionalAction, default=True)
-# parser.add_argument("--pen_state", action=argparse.BooleanOptionalAction, default=True)
-# parser.add_argument("--stroke_embedding", action=argparse.BooleanOptionalAction, default=False)
-# parser.add_argument("--sketch_pos", action=argparse.BooleanOptionalAction, default=True)
-# parser.add_argument("--stroke_pos", action=argparse.BooleanOptionalAction, default=False)
 
-# #perturbation arguments
-# parser.add_argument("--inter_stroke", action=argparse.BooleanOptionalAction, default=False)
-# parser.add_argument("--intra_stroke", action=argparse.BooleanOptionalAction, default=False)
-# parser.add_argument("--intra_stroke_rev", action=argparse.BooleanOptionalAction, default=False)
-# parser.add_argument("--stroke_order", action=argparse.BooleanOptionalAction, default=False)
+for input_normalization in [("rel", True), ("abs", False)]:
+    for output_normalization in [("rel", True), ("abs", False)]:
+        i = 0
+        
+        config = {'reference': False, 'paths': {}}
+        
+        for seed in [42, 1999, 5342]:
 
-# #general arguments
-# parser.add_argument("--ckpt_path", type=str)
-# parser.add_argument("--results_path", type=str)
+            filename = f"{input_normalization[0]}_{output_normalization[0]}_decoder_ffn_seed_{seed}"
+            path = config_path.joinpath(f"{filename}.yaml")
+            
+            config['paths']['model_base_config'] = f"./configs/decoder_studies/modifications/base_config.yaml"
+            config['paths']['model_config'] = f"./configs/decoder_studies/ffn/{filename}.yaml"
+            config['paths']['checkpoint'] = f"./checkpoints/transfer/decoder_studies/ffn/{filename}"
+            config['paths']['results'] = f"./results/transfer/decoder_studies/ffn/{filename}.pkl"
 
-# args = parser.parse_args()
+            with open(path, "w") as file:
+                yaml.safe_dump(config, file)
+
+        i += 1

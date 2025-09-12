@@ -83,7 +83,8 @@ class DecoderWrapper(nn.Module):
             x = self.pos_emb(x, pos_info)
         
         # Sum first only
-        if self.decoder_config.condition_first:
+        #if self.decoder_config.condition_first:
+        if self.decoder_config.condition_first and (not self.decoder_config.autoregressive or self.training):
             x = x + h_sketch
             h_sketch = None
 

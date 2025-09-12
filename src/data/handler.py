@@ -1,6 +1,30 @@
 import torch
 from copy import deepcopy
 
+
+
+def add_noise(points, mask, noise_std=0.01, mask_rate=0.2, generator=None):
+    B, N, D = points.shape
+    points = points.clone()
+    dropped_points = torch.zeros_like(mask)
+
+    for b in range(B):
+        valid_idx = mask[b].nonzero(as_tuple=True)[0]
+        n_valid = valid_idx.numel()
+        n_drop = int(mask_rate * n_valid)
+        
+        if n_drop > 0:
+            drop_idx = valid_idx[torch.randperm(n_valid, generator=generator)[:n_drop]].to(points.device)
+            dropped_points[b, drop_idx] = True
+            points[b, drop_idx] = 0.0
+
+    valid_mask = mask & (~dropped_points)
+    points[valid_mask] = points[valid_mask] + torch.randn(size=points[valid_mask].shape, dtype=points.dtype, generator=generator).to(points.device) * noise_std
+
+    return points
+
+
+
 class InputHandler():
     token_to_id = {
         "POS": 0,
@@ -8,18 +32,30 @@ class InputHandler():
         "NAR": 2
     }
 
-    def __init__(self, input_relative_coords=True, output_relative_coords=None, autoencoder=False, mode="train", autoregressive=True, denoising=False, noise_std=0.05):
+    def __init__(self, input_relative_coords=True, output_relative_coords=None, autoencoder=False, mode="train", autoregressive=True, denoising=False, noise_std=0.05, mask_rate=0.5):
         self.input_relative_coords = input_relative_coords
         self.output_relative_coords = output_relative_coords
         self.autoencoder = autoencoder
-        self.set_mode(mode)
         self.autoregressive = autoregressive
         self.denoising = denoising
         self.noise_std = noise_std
+        self.mask_rate = mask_rate
+
+        if denoising:
+            self.noise_gen = torch.Generator().manual_seed(42)
+
+        self.set_mode(mode)
 
     def set_mode(self, mode):
         assert mode in ["train", "validation", "test"]
         self.mode = mode
+
+        if self.denoising and mode == "validation":
+            self.noise_gen.manual_seed(42)
+
+        if self.denoising and mode == "test":
+            self.noise_gen.manual_seed(53)
+
 
     def _right_shift(self, batch, token_id):
         B, L = batch['batch_size'], batch['batch_length']
@@ -85,7 +121,9 @@ class InputHandler():
             model_input['decoder']['pos'] = torch.zeros_like(batch['pos'], device=model_input['encoder']['pos'].device)
 
         if self.denoising and self.mode == "train":
-            model_input['encoder']['pos'] = model_input['encoder']['pos'] + torch.randn_like(model_input['encoder']['pos']) * self.noise_std
+            model_input['encoder']['pos'] = add_noise(model_input['encoder']['pos'], mask=model_input['encoder']['mask'], noise_std=self.noise_std, mask_rate=self.mask_rate)
+        elif self.denoising:
+            model_input['encoder']['pos'] = add_noise(model_input['encoder']['pos'], mask=model_input['encoder']['mask'], noise_std=self.noise_std, mask_rate=self.mask_rate, generator=self.noise_gen)
 
         model_input['encoder'] = self._prepare(model_input['encoder'])
         model_input['decoder'] = self._prepare(model_input['decoder'])
