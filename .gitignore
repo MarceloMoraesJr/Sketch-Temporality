@@ -7,3 +7,6 @@ configs
 /data/
 results
 __pycache__/
+.vscode
+notebooks
+tools
