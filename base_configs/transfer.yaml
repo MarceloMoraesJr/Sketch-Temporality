@@ -1,0 +1,5 @@
+training:
+  max_epochs: 1
+  lr: 0.001
+  batch_size: 512
+  num_workers: 8

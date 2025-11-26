@@ -1,0 +1,23 @@
+architecture:
+  hidden_dim: 128
+  num_layers: 4
+pe:
+  input_relative_coords: true
+  pen_state: true
+  sketch_pos: true
+  stroke_embedding: false
+  stroke_pos: false
+perturbations:
+  inter_stroke: false
+  intra_stroke: false
+  intra_stroke_rev: false
+  stroke_order: false
+training:
+  batch_size: 512
+  hidden_dropout: 0.1
+  lr: 0.001
+  max_epochs: 150
+  num_workers: 8
+  patience: 15
+  seed: 42
+  split: 0

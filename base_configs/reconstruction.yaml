@@ -1,0 +1,37 @@
+architecture:
+  decoder:
+    autoregressive: true
+    condition_every: false
+    condition_first: false
+    cross_attn: true
+    remove_self_attn: false
+    replace_cross_attn: false
+    replace_self_attn: false
+  hidden_dim: 128
+  num_decoder_layers: 4
+  num_encoder_layers: 4
+pe:
+  input_relative_coords: true
+  output_relative_coords: true
+  pen_state: true
+  sketch_pos: true
+  stroke_embedding: false
+  stroke_pos: false
+perturbations:
+  inter_stroke: false
+  intra_stroke: false
+  intra_stroke_rev: false
+  stroke_order: false
+training:
+  batch_size: 512
+  hidden_dropout: 0.1
+  log_every_n_steps: 500
+  lr: 0.001
+  max_steps: 75000
+  num_workers: 8
+  patience: 15
+  seed: 42
+  val_check_interval: 1500
+denoising: false
+noise_std: 0.0
+mask_rate: 0.0
